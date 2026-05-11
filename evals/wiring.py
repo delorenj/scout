@@ -5,7 +5,7 @@ Checks:
     W2  `DatabaseContextProvider` exposes `query_crm` AND `update_crm`.
     W3  Schema guard rejects DDL/DML targeting `public`/`ai` on the scout engine.
     W4  Every registered `ContextProvider` has the expected shape.
-    W5  GDrive provider uses `AllDrivesGoogleDriveTools`, not bare `GoogleDriveTools`.
+    W5  GDrive provider constructs `GoogleDriveTools` with all-drives coverage.
     W6  `MCPContextProvider` implements the lifecycle interface cleanly.
     W7  Scout has a non-template default user_id so missing-caller-uid doesn't leak `{user_id}` into SQL.
 
@@ -203,23 +203,39 @@ def w4_context_protocol_shape() -> None:
                 raise AssertionError(f"ContextProvider {ctx.id!r} missing callable method {method!r}")
 
 
-def w5_gdrive_uses_alldrives_subclass() -> None:
-    """GDrive provider must use `AllDrivesGoogleDriveTools`, not bare `GoogleDriveTools`.
+def w5_gdrive_covers_shared_drives() -> None:
+    """GDrive provider must construct `GoogleDriveTools` with all-drives coverage.
 
-    The bare upstream toolkit queries `corpora=user` and misses every file
-    the SA doesn't own directly (shared folders, Shared Drives). Regressing
-    to bare `GoogleDriveTools` silently breaks every real deployment, so
-    pin the subclass here.
+    The default upstream toolkit queries `corpora="user"` and misses every file
+    the SA doesn't own directly (shared folders, Shared Drives). Regressing to
+    user-only corpora silently breaks every real deployment.
+
+    agno consolidated `AllDrivesGoogleDriveTools` into `GoogleDriveTools` with
+    explicit kwargs (`corpora`, `supports_all_drives`, `include_items_from_all_drives`),
+    so we assert against the kwargs the provider passes through, not the class.
     """
     from agno.context.gdrive import GDriveContextProvider
-    from agno.context.gdrive.tools import AllDrivesGoogleDriveTools
+    from agno.context.gdrive.provider import GoogleDriveTools
 
     provider = GDriveContextProvider(service_account_path="/tmp/eval-wiring-stub.json")
     toolkit = provider._ensure_tools()
-    if not isinstance(toolkit, AllDrivesGoogleDriveTools):
+    if not isinstance(toolkit, GoogleDriveTools):
         raise AssertionError(
             f"GDriveContextProvider._ensure_tools() returned {type(toolkit).__name__}; "
-            f"expected AllDrivesGoogleDriveTools so shared-folder / Shared-Drive files are visible"
+            f"expected GoogleDriveTools (or a subclass)"
+        )
+
+    expected = {
+        "corpora": "allDrives",
+        "supports_all_drives": True,
+        "include_items_from_all_drives": True,
+    }
+    actual = {k: getattr(toolkit, k, "<missing>") for k in expected}
+    if actual != expected:
+        raise AssertionError(
+            f"GoogleDriveTools constructed with wrong shared-drive kwargs: "
+            f"expected {expected}, got {actual}. Shared folders / Shared Drives "
+            f"will be invisible to Scout."
         )
 
 
@@ -349,7 +365,7 @@ CHECKS = (
     w2_crm_provider_surface,
     w3_schema_guard_blocks_non_scout_writes,
     w4_context_protocol_shape,
-    w5_gdrive_uses_alldrives_subclass,
+    w5_gdrive_covers_shared_drives,
     w6_mcp_provider_lifecycle,
     w7_scout_has_default_user_id,
     w8_wiki_provider_surfaces,

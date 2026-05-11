@@ -5,11 +5,25 @@
 FROM agnohq/python:3.12
 
 # ---------------------------------------------------------------------------
-# System dependencies
+# System dependencies — Node 22 is required because Plane's MCP server is
+# distributed as `@makeplane/plane-mcp-server` (npm) and Scout spawns it via
+# `npx` for stdio transport. Without Node, Plane MCP providers fail to start.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
+        ca-certificates curl gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Pre-install Plane MCP server so first `npx` call doesn't pay a cold-start
+# network fetch. Pinning the version keeps deploys reproducible — bump
+# deliberately, not transparently.
+RUN npm install -g @makeplane/plane-mcp-server@0.1.5 \
+    && npm cache clean --force
 
 # ---------------------------------------------------------------------------
 # Application code

@@ -1,0 +1,58 @@
+[tools]
+python = "3.12"
+uv = "latest"
+
+[env]
+_.file = ".env"
+
+[tasks.dev]
+description = "Run scout locally (dev compose, hot reload, localhost:13579)"
+run = "docker compose up -d && docker compose logs -f scout-api"
+
+[tasks.down]
+description = "Stop the local dev stack"
+run = "docker compose down"
+
+[tasks.build]
+description = "Build scout image and tag for ghcr.io"
+run = """
+docker compose build scout-api
+docker tag scout:latest ghcr.io/delorenj/scout:latest
+"""
+
+[tasks.push]
+description = "Push scout:latest to ghcr.io/delorenj/scout"
+depends = ["build"]
+run = "docker push ghcr.io/delorenj/scout:latest"
+
+[tasks.deploy]
+description = "Pull latest scout image and restart the prod stack at scout.delo.sh"
+run = """
+cd ~/docker/stacks/ai/scout
+docker compose pull scout-api
+docker compose up -d scout-api
+"""
+
+[tasks.ship]
+description = "Full round-trip: build, push, and deploy to scout.delo.sh"
+depends = ["push"]
+run = """
+cd ~/docker/stacks/ai/scout
+docker compose pull scout-api
+docker compose up -d scout-api
+echo
+echo "Deployed. Smoke-test:"
+echo "  curl -s https://scout.delo.sh/health"
+"""
+
+[tasks.evals-wiring]
+description = "Run the static wiring tier of evals (no LLM)"
+run = "uv run python -m evals wiring"
+
+[tasks.evals]
+description = "Run the behavioral eval suite (LLM, ~3min)"
+run = "uv run python -m evals"
+
+[tasks.contexts]
+description = "List registered context providers with status"
+run = "uv run python -m scout contexts"

@@ -4,15 +4,15 @@ services:
     container_name: scout-db
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "13578:5432"
     volumes:
-      - pgdata:/var/lib/postgresql
+      - scout-pgdata:/var/lib/postgresql
     environment:
       POSTGRES_USER: ${DB_USER:-ai}
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
     networks:
-      - scout
+      - scout-network
 
   scout-api:
     build:
@@ -29,9 +29,15 @@ services:
       --reload-dir scout --reload-dir app --reload-dir db
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "13579:8000"
     volumes:
+      # Dev hot-reload: bind the repo into the image. Drop this in a prod
+      # compose override so the immutable image is the source of truth.
       - .:/app
+      # Secrets mounted RO so they live on the deploy host and rotate
+      # without rebuilds. Never bake into the image.
+      - ./.env:/app/.env:ro
+      - ./.scout/service-account.json:/run/secrets/gdrive-sa.json:ro
     env_file:
       - path: .env
         required: false
@@ -39,21 +45,27 @@ services:
       RUNTIME_ENV: dev
       AGNO_DEBUG: "True"
       WAIT_FOR_DB: "True"
-      AGENTOS_URL: http://127.0.0.1:8000
+      AGENTOS_URL: http://192.168.1.12:13579
       DB_HOST: scout-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
       DB_PASS: ${DB_PASS:-ai}
       DB_DATABASE: ${DB_DATABASE:-ai}
+      # Override the .env path so the app reads the SA file from the secret
+      # mount, not the repo bind. Same file today via the dev bind, but the
+      # production-ready path is the secret mount.
+      GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/gdrive-sa.json
     depends_on:
       - scout-db
     networks:
-      - scout
+      - scout-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Dev stays on localhost:13579 only. Public hostname (scout.delo.sh) is
+    # owned by ~/docker/stacks/ai/scout/ — never let dev claim the route or
+    # Traefik will fight for the registration with the prod entry.
 
 networks:
-  scout:
-
+  scout-network:
 volumes:
-  pgdata:
+  scout-pgdata:

@@ -11,7 +11,7 @@ from agno.os import AgentOS
 
 from app.router import create_router
 from db import get_postgres_db
-from scout.agent import scout
+from scout.agent import scout, scout_slack
 from scout.contexts import close_context_providers, setup_context_providers
 
 # ---------------------------------------------------------------------------
@@ -30,9 +30,12 @@ interfaces: list = []
 if SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET:
     from agno.os.interfaces.slack import Slack
 
+    # Slack uses the scoped variant — personal contexts (33god Plane, etc.)
+    # stay out of business conversations. See SLACK_HIDDEN_PROVIDER_IDS in
+    # scout/contexts.py to adjust the allowlist.
     interfaces.append(
         Slack(
-            agent=scout,
+            agent=scout_slack,
             streaming=True,
             token=SLACK_BOT_TOKEN,
             signing_secret=SLACK_SIGNING_SECRET,
@@ -67,7 +70,7 @@ agent_os = AgentOS(
     authorization=runtime_env == "prd",
     lifespan=lifespan,
     db=get_postgres_db(),
-    agents=[scout],
+    agents=[scout, scout_slack],
     interfaces=interfaces,
     config=str(Path(__file__).parent / "config.yaml"),
 )

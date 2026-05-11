@@ -43,6 +43,18 @@ SCOUT_FS_ROOT = Path(__file__).resolve().parents[1]
 WIKI_KNOWLEDGE_PATH = SCOUT_FS_ROOT / "wiki" / "knowledge"
 WIKI_VOICE_PATH = SCOUT_FS_ROOT / "wiki" / "voice"
 
+# Provider IDs hidden from the Slack-bound Scout variant. Personal contexts
+# (33god Plane workspace, future personal MCPs) live here so they never leak
+# into business Slack conversations. Read by `scout_slack_tools()` in
+# scout/agent.py. Override at runtime via SCOUT_SLACK_HIDDEN_PROVIDER_IDS
+# (comma-separated provider IDs).
+_default_slack_hidden = "mcp_plane_33god"
+SLACK_HIDDEN_PROVIDER_IDS: set[str] = {
+    s.strip()
+    for s in getenv("SCOUT_SLACK_HIDDEN_PROVIDER_IDS", _default_slack_hidden).split(",")
+    if s.strip()
+}
+
 
 # ---------------------------------------------------------------------------
 # Create Context Providers
@@ -255,7 +267,48 @@ def _create_mcp_providers() -> list[MCPContextProvider]:
     from env via ``getenv(...)`` inside the constructor call. See
     ``docs/MCP_CONNECT.md``.
     """
-    return []
+    providers: list[MCPContextProvider] = []
+
+    # Hindsight: persistent agent memory (banks, retain/recall/reflect).
+    # Skipped silently if the API key is missing so dev shells don't fail.
+    hindsight_url = getenv("HINDSIGHT_MCP_URL", "https://api.hs.delo.sh/mcp")
+    hindsight_key = getenv("HINDSIGHT_API_KEY")
+    if hindsight_key:
+        providers.append(
+            MCPContextProvider(
+                server_name="hindsight",
+                transport="streamable-http",
+                url=hindsight_url,
+                headers={"Authorization": f"Bearer {hindsight_key}"},
+                model=default_model(),
+            )
+        )
+
+    # Plane: one MCP per workspace. The npm CLI binds a single workspace per
+    # subprocess via PLANE_WORKSPACE_SLUG, so we spawn one provider per slug
+    # and Scout sees `query_mcp_plane_<slug>` for each. Single PAT covers all
+    # workspaces a user is a member of on the same Plane install.
+    plane_key = getenv("PLANE_API_KEY")
+    plane_base = getenv("PLANE_BASE_URL", "https://api.plane.so")
+    plane_workspaces = [w.strip() for w in getenv("PLANE_WORKSPACES", "").split(",") if w.strip()]
+    if plane_key and plane_workspaces:
+        for slug in plane_workspaces:
+            providers.append(
+                MCPContextProvider(
+                    server_name=f"plane_{slug}",
+                    transport="stdio",
+                    command="npx",
+                    args=["-y", "@makeplane/plane-mcp-server"],
+                    env={
+                        "PLANE_API_KEY": plane_key,
+                        "PLANE_BASE_URL": plane_base,
+                        "PLANE_WORKSPACE_SLUG": slug,
+                    },
+                    model=default_model(),
+                )
+            )
+
+    return providers
 
 
 def context_providers_summary() -> str:
