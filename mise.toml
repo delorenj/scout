@@ -25,8 +25,16 @@ description = "Push scout:latest to ghcr.io/delorenj/scout"
 depends = ["build"]
 run = "docker push ghcr.io/delorenj/scout:latest"
 
+[tasks.inject]
+description = "Resolve secrets from 1Password into ~/docker/stacks/ai/scout/.env"
+run = """
+cd ~/docker/stacks/ai/scout
+~/docker/stacks/_lib/op-inject.sh
+"""
+
 [tasks.deploy]
-description = "Pull latest scout image and restart the prod stack at scout.delo.sh"
+description = "Re-inject secrets, pull latest image, restart prod stack"
+depends = ["inject"]
 run = """
 cd ~/docker/stacks/ai/scout
 docker compose pull scout-api
@@ -34,8 +42,8 @@ docker compose up -d scout-api
 """
 
 [tasks.ship]
-description = "Full round-trip: build, push, and deploy to scout.delo.sh"
-depends = ["push"]
+description = "Full round-trip: build, push, inject, deploy"
+depends = ["push", "inject"]
 run = """
 cd ~/docker/stacks/ai/scout
 docker compose pull scout-api

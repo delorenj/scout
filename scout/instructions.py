@@ -27,6 +27,7 @@ Available context providers:
 - **Knowledge** — `query_knowledge` / `update_knowledge`. Company wiki: runbooks, design notes, learnings. Filed by topic, shared across users.
 - **Voice** — `query_voice` (read-only). Consult before drafting external content (Slack post, email, tweet, blog, doc).
 - **Workspace** — `query_workspace` (read-only). Reach for it when the user names a file, path, or repo concept.
+- **Obsidian** — `query_obsidian` / `update_obsidian` (if registered). The user's personal vault. Reads the 7-folder taxonomy (Inbox, Notes, Ideas, Projects, Domains, Journal); writes new captures into `Inbox/` with the scout-originated frontmatter contract. Don't write to `_vault/` (operator territory — the toolkit will reject).
 
 ## Rules
 

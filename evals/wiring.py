@@ -343,6 +343,45 @@ def w8_wiki_provider_surfaces() -> None:
         raise AssertionError(f"voice wiki should be read-only (write=False) — found update tool in {voice_tools}")
 
 
+def w10_obsidian_provider_surfaces() -> None:
+    """`ObsidianContextProvider` exposes BOTH `query_obsidian` AND `update_obsidian`.
+
+    Until M2 of the DeLoDocs-scout-integration project landed the provider
+    was a `WorkspaceContextProvider` (read-only). Regressing to read-only
+    would silently drop scout's ability to file Inbox notes, daily briefs,
+    and verdict-aware syntheses into the vault — exactly the surface the
+    backward-feedback loop depends on.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from scout.obsidian_provider import ObsidianContextProvider, obsidian_inbox_filename
+
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = Path(tmp)
+        (vault / "Inbox").mkdir()
+        provider = ObsidianContextProvider(vault_path=vault)
+        names = _tool_names(provider.get_tools())
+        _assert_has(names, ("query_obsidian", "update_obsidian"), "ObsidianContextProvider")
+
+        # The write workspace must refuse `_vault/**` writes — the safety
+        # invariant the project spec calls out.
+        write_ws = provider._build_write_tools()
+        (vault / "_vault").mkdir()
+        result = write_ws.write_file("_vault/HANDBOOK.md", "evil")
+        if "not allowed" not in result.lower() and "excluded" not in result.lower():
+            raise AssertionError(
+                f"ObsidianContextProvider write workspace did NOT block _vault/ write; got: {result!r}"
+            )
+        if (vault / "_vault" / "HANDBOOK.md").exists():
+            raise AssertionError("write to _vault/HANDBOOK.md was supposed to be blocked but the file got created")
+
+        # And the canonical Inbox filename must be parseable: seconds + scout + slug + nonce.
+        fname = obsidian_inbox_filename("hello-world")
+        if not fname.endswith(".md") or "-scout-" not in fname or "hello-world" not in fname:
+            raise AssertionError(f"obsidian_inbox_filename produced an unexpected name: {fname!r}")
+
+
 def w9_followups_in_canonical_ddl() -> None:
     """``scout_followups`` ships in the canonical DDL alongside contacts/projects/notes.
 
@@ -370,6 +409,7 @@ CHECKS = (
     w7_scout_has_default_user_id,
     w8_wiki_provider_surfaces,
     w9_followups_in_canonical_ddl,
+    w10_obsidian_provider_surfaces,
 )
 
 

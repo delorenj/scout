@@ -29,6 +29,7 @@ from agno.utils.log import log_info, log_warning
 
 from db import SCOUT_SCHEMA, get_readonly_engine, get_sql_engine
 from scout.instructions import SCOUT_CRM_READ, SCOUT_CRM_WRITE
+from scout.obsidian_provider import ObsidianContextProvider
 from scout.settings import default_model
 
 # Workspace root for the always-on filesystem context. Hardcoded to the
@@ -79,7 +80,7 @@ def create_context_providers() -> list[ContextProvider]:
         _create_knowledge_wiki(),
         _create_voice_wiki(),
     ]
-    for factory in (_create_slack_provider, _create_gdrive_provider):
+    for factory in (_create_obsidian_provider, _create_slack_provider, _create_gdrive_provider):
         try:
             provider = factory()
         except Exception as exc:
@@ -181,6 +182,31 @@ def _create_web_provider() -> WebContextProvider:
 
 def _create_workspace_provider() -> WorkspaceContextProvider:
     return WorkspaceContextProvider(root=SCOUT_FS_ROOT, model=default_model())
+
+
+def _create_obsidian_provider() -> ObsidianContextProvider | None:
+    """Read + write window into the user's Obsidian vault.
+
+    Activates when OBSIDIAN_VAULT_PATH is set and points at an existing
+    directory. Exposes `query_obsidian` (reads) and `update_obsidian`
+    (writes scout-originated notes into `Inbox/` with the canonical
+    frontmatter contract). Backed by a filesystem backend — the vault
+    has its own auto-commit cron, so we don't commit per-write.
+
+    Excludes Obsidian's local-only state (`.obsidian/`, `.trash/`) and
+    the vault's operator-managed `_vault/` directory.
+    """
+    raw = getenv("OBSIDIAN_VAULT_PATH", "").strip()
+    if not raw:
+        return None
+    root = Path(raw)
+    if not root.is_dir():
+        log_warning(f"OBSIDIAN_VAULT_PATH={raw!r} is not a directory; skipping Obsidian provider")
+        return None
+    return ObsidianContextProvider(
+        vault_path=root,
+        model=default_model(),
+    )
 
 
 def _create_knowledge_wiki() -> WikiContextProvider:

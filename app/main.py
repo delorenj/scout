@@ -8,6 +8,7 @@ from os import getenv
 from pathlib import Path
 
 from agno.os import AgentOS
+from agno.os.config import AuthorizationConfig
 
 from app.router import create_router
 from db import get_postgres_db
@@ -19,6 +20,15 @@ from scout.contexts import close_context_providers, setup_context_providers
 # ---------------------------------------------------------------------------
 runtime_env = getenv("RUNTIME_ENV", "prd")
 scheduler_base_url = getenv("AGENTOS_URL", "http://127.0.0.1:8000")
+jwt_jwks_file = getenv("JWT_JWKS_FILE", "").strip()
+
+# Build the AuthorizationConfig only when prod auth is on AND we have a JWKS
+# file to read. agno verifies inbound RS256 tokens against the keys in the
+# JWKS — no PEM conversion, no multi-line env var. Mount the file at the
+# path JWT_JWKS_FILE points to.
+authorization_config: AuthorizationConfig | None = None
+if runtime_env == "prd" and jwt_jwks_file:
+    authorization_config = AuthorizationConfig(jwks_file=jwt_jwks_file)
 
 # ---------------------------------------------------------------------------
 # Interfaces — Slack lights up when both env vars are set
@@ -68,6 +78,7 @@ agent_os = AgentOS(
     scheduler=True,
     scheduler_base_url=scheduler_base_url,
     authorization=runtime_env == "prd",
+    authorization_config=authorization_config,
     lifespan=lifespan,
     db=get_postgres_db(),
     agents=[scout, scout_slack],
